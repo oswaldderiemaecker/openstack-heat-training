@@ -1,0 +1,49 @@
+heat_template_version: 2016-10-14
+description: Lab 1,2 - Params, Params Group, Resource Section
+parameters:
+  username:
+    type: string
+    constraints:
+     - length: { min: 6, max: 8 }
+       description: User name must be between 6 and 8 characters
+     - allowed_pattern: "[A-Z]+[a-zA-Z0-9]*"
+       description: User name must start with an uppercase character
+  password:
+    type: string
+    hidden: true
+  env_type:
+    default: test
+    type: string
+    constraints:
+      - allowed_values: [prod, test]
+
+parameter_groups:
+- label: user-auth
+  description: User Authentication
+  parameters:
+  - username
+  - password
+
+conditions:
+  create_prod_res: {equals : [{get_param: env_type}, "prod"]}
+
+resources:
+  server1:
+    type: OS::Nova::Server
+    # add base networking and flavor
+    depends_on: server2
+
+  server2:
+    type: OS::Nova::Server
+    # add base networking and flavor
+
+  volume:
+    type: OS::Cinder::Volume
+    condition: create_prod_res
+    properties:
+      size: 1
+
+outputs:
+  instance_ip:
+    description: IP address of the deployed compute instance
+    value: { get_attr: [server1, first_address] }

@@ -1,0 +1,174 @@
+heat_template_version: 2014-10-16
+description: Lab 1,2,3,4 - Params, Params Group, Resource Section, Main resources addition, Usage of Intrinsec Functions
+parameters:
+  username:
+    type: string
+    constraints:
+     - length: { min: 6, max: 8 }
+       description: User name must be between 6 and 8 characters
+     - allowed_pattern: "[A-Z]+[a-zA-Z0-9]*"
+       description: User name must start with an uppercase character
+  password:
+    type: string
+    hidden: true
+  env_type:
+    default: test
+    type: string
+    constraints:
+      - allowed_values: [prod, test]
+  #3
+  image:
+    type: string
+    description: Name of image to use for servers
+  flavor:
+    type: string
+    description: Flavor to use for servers
+  public_net:
+    type: string
+    description: >
+      ID or name of public network for which floating IP addresses will be allocated
+  #4
+  ports:
+    type: comma_delimited_list
+    default: "80,443"
+
+parameter_groups:
+- label: user-auth
+  description: User Authentication
+  parameters:
+  - username
+  - password
+
+conditions:
+  create_prod_res: {equals : [{get_param: env_type}, "prod"]}
+
+resources:
+  #3
+  private_net:
+    type: OS::Neutron::Net
+
+  #3
+  private-subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      network_id: { get_resource: private_net }
+      cidr: "10.8.1.0/24"
+      dns_nameservers: [ "8.8.8.8", "8.8.4.4" ]
+      ip_version: 4
+
+  #3
+  router:
+    type: OS::Neutron::Router
+    properties:
+      external_gateway_info:
+        network: { get_param: public_net }
+
+  #3
+  router_interface:
+    type: OS::Neutron::RouterInterface
+    properties:
+      router_id: { get_resource: router }
+      subnet_id: { get_resource: private_subnet }
+
+  #3
+  web_secgroup:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      rules:
+        #4
+        repeat:
+          template:
+            protocol: tcp
+            port_range_min: <%port%>
+            port_range_max: <%port%>
+          for_each:
+            <%port%>: { get_param: ports }
+
+  #3
+  my_key:
+    type: OS::Nova::KeyPair
+    properties:
+      save_private_key: true
+      name: my_key
+
+  #3
+  server1_port:
+    type: OS::Neutron::Port
+    properties:
+      network: { get_resource: private_net }
+      security_groups:
+        - default
+        - { get_resource: web_secgroup }
+      fixed_ips:
+        - subnet_id: { get_resource: private_subnet }
+
+  server1:
+    type: OS::Nova::Server
+    #3
+    properties:
+      #4
+      name: {if: ["create_prod_res", "server1_prod", "server1_test"]}
+      image: { get_param: image }
+      flavor: { get_param: flavor }
+      key_name: { get_resource: my_key }
+      networks:
+          - port: { get_resource: server1_port }
+
+      depends_on: server2
+
+  #3
+  server1_floating_ip:
+    type: OS::Neutron::FloatingIP
+    properties:
+      floating_network: { get_param: public_net }
+      port_id: { get_resource: server1_port }
+
+  #3
+  server2_port:
+    type: OS::Neutron::Port
+    properties:
+      network_id: { get_resource: private_net }
+      fixed_ips:
+        - subnet_id: { get_resource: private_subnet }
+
+  server2:
+    type: OS::Nova::Server
+    #3
+    properties:
+      #4
+      name: {if: ["create_prod_res", "server2_prod", "server2_test"]}
+      image: { get_param: image }
+      flavor: { get_param: flavor }
+      key_name: { get_resource: my_key }
+      networks:
+          - port: { get_resource: server2_port }
+
+  volume:
+    type: OS::Cinder::Volume
+    condition: create_prod_res
+    properties:
+      image: { get_param: image }
+      size: 1
+
+  volume_attachment:
+    type: OS::Cinder::VolumeAttachment
+    condition: create_prod_res
+    properties:
+      volume_id: { get_resource: volume }
+      instance_uuid: { get_resource: server1 }
+
+outputs:
+  #4
+  server1_private_ip:
+    description: IP address of server1 in private network
+    value: { get_attr: [ server1, first_address ] }
+  server1_public_ip:
+    description: Floating IP address of server1 in public network
+    value: { get_attr: [ server1_floating_ip, floating_ip_address ] }
+  server2_private_ip:
+    description: IP address of server2 in private network
+    value: { get_attr: [ server2, first_address ] }
+
+  private_key:
+    description: Private key
+    value: { get_attr: [ my_key, private_key ] }

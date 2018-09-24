@@ -1,0 +1,13 @@
+parameter_defaults:
+  InstanceType: m1.nano
+
+parameters:
+  KeyName: prod_key
+  InstanceType: m1.micro
+  ImageId: Cirros
+
+parameter_merge_strategies:
+  default: overwrite
+
+resource_registry:
+ "OS::Nova::Server::Cirros": "cirros.yaml"

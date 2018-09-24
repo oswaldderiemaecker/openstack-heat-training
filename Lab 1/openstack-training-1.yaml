@@ -1,0 +1,25 @@
+heat_template_version: 2014-10-16
+description: Lab 1 - Params, Params Group
+parameters:
+  username:
+    type: string
+    constraints:
+     - length: { min: 6, max: 8 }
+       description: User name must be between 6 and 8 characters
+     - allowed_pattern: "[A-Z]+[a-zA-Z0-9]*"
+       description: User name must start with an uppercase character
+  password:
+    type: string
+    hidden: true
+  env_type:
+    default: test
+    type: string
+    constraints:
+      - allowed_values: [prod, test]
+
+parameter_groups:
+- label: user-auth
+  description: User Authentication
+  parameters:
+  - username
+  - password

@@ -21,5 +21,9 @@ parameter_groups:
 - label: user-auth
   description: User Authentication
   parameters:
-  - username
-  - password
+   - username
+   - password
+- label: environment
+  description: Environment configuration to choose
+  parameters:
+   - env_type

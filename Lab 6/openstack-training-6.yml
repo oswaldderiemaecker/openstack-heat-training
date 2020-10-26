@@ -1,6 +1,6 @@
 heat_template_version: 2016-10-14
-# openstack stack create --wait -f yaml -t openstack-lab5.yml --parameter "database_user=Testing1" --parameter "database_name=mydb" --parameter "image-webserver=cirros" --parameter "flavor-webserver=m1.tiny"  --parameter "image-database=debian9" --parameter "flavor-database=m1.xlarge" lab6
-# openstack stack update --wait -f yaml -t openstack-lab5.yml --parameter "database_user=Testing1" --parameter "database_name=mydb" --parameter "image-webserver=cirros" --parameter "flavor-webserver=m1.tiny"  --parameter "image-database=debian9" --parameter "flavor-database=m1.xlarge" lab6
+# openstack stack create --wait -f yaml -t openstack-training-6.yml --parameter "database_user=Testing1" --parameter "database_name=mydb" --parameter "image-webserver=cirros" --parameter "flavor-webserver=m1.tiny"  --parameter "image-database=debian9" --parameter "flavor-database=m1.xlarge" lab6
+# openstack stack update --wait -f yaml -t openstack-training-6.yml --parameter "database_user=Testing1" --parameter "database_name=mydb" --parameter "image-webserver=cirros" --parameter "flavor-webserver=m1.tiny"  --parameter "image-database=debian9" --parameter "flavor-database=m1.xlarge" lab6
 # https://cdimage.debian.org/cdimage/openstack/current-9/
 # wget https://cdimage.debian.org/cdimage/openstack/current-9/debian-9-openstack-amd64.qcow2
 # openstack image create "debian9" --file debian-9-openstack-amd64.qcow2 --disk-format qcow2 --container-format bare --public
@@ -80,12 +80,12 @@ conditions:
   create_prod_res: {equals : [{get_param: env_type}, "prod"]}
 
 resources:
-#  wait_condition:
-#    type: OS::Heat::WaitCondition
-#    properties:
-#      handle: { get_resource: wait_handle }
-#      count: 1
-#      timeout: 600
+  wait_condition:
+    type: OS::Heat::WaitCondition
+    properties:
+      handle: { get_resource: wait_handle }
+      count: 1
+      timeout: 600
       
   wait_handle:
     type: OS::Heat::WaitConditionHandle

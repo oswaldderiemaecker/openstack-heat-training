@@ -1,0 +1,256 @@
+heat_template_version: 2016-10-14
+# openstack stack create --wait -f yaml -t openstack-lab5.yml --parameter "database_user=Testing1" --parameter "database_name=mydb" --parameter "image-webserver=cirros" --parameter "flavor-webserver=m1.tiny"  --parameter "image-database=centos7" --parameter "flavor-database=m1.xlarge" lab6
+# openstack stack update --wait -f yaml -t openstack-lab5.yml --parameter "database_user=Testing1" --parameter "database_name=mydb" --parameter "image-webserver=cirros" --parameter "flavor-webserver=m1.tiny"  --parameter "image-database=centos7" --parameter "flavor-database=m1.xlarge" lab6
+# https://cdimage.debian.org/cdimage/openstack/current-9/
+# wget https://cdimage.debian.org/cdimage/openstack/current-9/debian-9-openstack-amd64.qcow2
+# openstack image create "debian9" --file debian-9-openstack-amd64.qcow2 --disk-format qcow2 --container-format bare --public
+# ROUTER=$(ip netns ls | grep router | awk {'print $1'})
+# openstack server list --name database -f value -c Networks
+# sudo ip netns exec $ROUTER ssh -v -i private_key centos@192.168.178.132
+# cd /var/lib/cloud/instance
+description: Lab 1,2 - Params, Params Group, Resource Section
+parameters:
+  database_user:
+    description: Database User
+    type: string
+    constraints:
+     - length: { min: 6, max: 8 }
+       description: User name must be between 6 and 8 characters
+     - allowed_pattern: "[A-Z]+[a-zA-Z0-9]*"
+       description: User name must start with an uppercase character
+  database_name:
+    description: Database Name
+    type: string
+  flavor-database:
+    type: string
+    description: Flavor for the database server to be created
+    default: m1.xlarge
+    constraints:
+      - custom_constraint: nova.flavor
+  flavor-webserver:
+    type: string
+    description: Flavor for the web server to be created
+    default: m1.tiny
+    constraints:
+      - custom_constraint: nova.flavor
+  image-database:
+    type: string
+    description: Image ID or image name to use for the server
+    constraints:
+      - custom_constraint: glance.image
+  image-webserver:
+    type: string
+    description: Image ID or image name to use for the server
+    constraints:
+      - custom_constraint: glance.image
+  env_type:
+    default: test
+    type: string
+    constraints:
+      - allowed_values: [prod, test]
+  public_net:
+    type: string
+    description: Network ID to use
+    default: net-2061-ext-web
+    constraints:
+      - custom_constraint: neutron.network
+  ports:
+    type: comma_delimited_list
+    default: "22,80,443"
+
+parameter_groups:
+- label: database-auth
+  description: Database Authentication
+  parameters:
+  - database_name
+  - database_user
+- label: other
+  description: Environment & Network
+  parameters:
+  - env_type
+  - public_net
+  - image-database
+  - image-webserver
+  - flavor-database
+  - flavor-webserver
+
+conditions:
+  create_prod_res: {equals : [{get_param: env_type}, "prod"]}
+
+resources:
+#  wait_condition:
+#    type: OS::Heat::WaitCondition
+#    properties:
+#      handle: { get_resource: wait_handle }
+#      count: 1
+#      timeout: 600
+      
+  wait_handle:
+    type: OS::Heat::WaitConditionHandle
+    
+  mysql_root_password:
+    type: OS::Heat::RandomString
+    properties:
+      length: 32
+      sequence: lettersdigits
+
+  database_password:
+    type: OS::Heat::RandomString
+    properties:
+      length: 32
+      sequence: lettersdigits
+  
+  private_net:
+    type: OS::Neutron::Net
+
+  #3
+  private_subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      network_id: { get_resource: private_net }
+      cidr: "10.8.1.0/24"
+      dns_nameservers: [ "8.8.8.8", "8.8.4.4" ]
+      ip_version: 4
+
+  #3
+  router:
+    type: OS::Neutron::Router
+    properties:
+      external_gateway_info:
+        network: { get_param: public_net }
+
+  #3
+  router_interface:
+    type: OS::Neutron::RouterInterface
+    properties:
+      router_id: { get_resource: router }
+      subnet_id: { get_resource: private_subnet }
+
+  #3
+  web_secgroup:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      rules:
+        #4
+        repeat:
+          template:
+            protocol: tcp
+            port_range_min: <%port%>
+            port_range_max: <%port%>
+          for_each:
+            <%port%>: { get_param: ports }
+
+  #3
+  my_key:
+    type: OS::Nova::KeyPair
+    properties:
+      save_private_key: true
+      name: my_key
+
+  server_database_port:
+    type: OS::Neutron::Port
+    properties:
+      network: { get_resource: private_net }
+      security_groups:
+        - default
+        - { get_resource: web_secgroup }
+      fixed_ips:
+        - subnet_id: { get_resource: private_subnet }
+
+  server_database_floating_ip:
+    type: OS::Neutron::FloatingIP
+    properties:
+      floating_network: { get_param: public_net }
+      port_id: { get_resource: server_database_port }
+          
+  server_database:
+    type: OS::Nova::Server
+    properties:
+      name: database
+      key_name: { get_resource: my_key }
+      image: { get_param: image-database }
+      flavor: { get_param: flavor-database }
+      networks:
+      - port: { get_resource: server_database_port }
+      user_data_format: RAW
+      user_data:
+        str_replace:
+          params:
+            __mysql_root_password__: { get_attr: [mysql_root_password, value] }
+            __database_name__: { get_param: database_name }
+            __database_user__: { get_param: database_user }
+            __database_password__: { get_attr: [database_password, value] }
+            wc_notify: { get_attr: ['wait_handle', 'curl_cli'] }
+          template: |
+            #!/bin/bash
+
+            # install MySQL
+            apt-get update
+            apt-get install -y mysql-server
+ 
+            # configure MySQL root password
+            #mysqladmin -u root password "__mysql_root_password__"
+ 
+            # listen on all network interfaces
+            #sed -i "s/bind-address.*/bind-address = 0.0.0.0/" /etc/mysql/my.cnf
+ 
+            # restart service
+            #service mysql restart
+ 
+            # create wordpress database
+            #mysql -u root --password="__mysql_root_password__" <<EOF
+            #CREATE DATABASE __database_name__;
+            #CREATE USER '__database_user__'@'localhost';
+            #SET PASSWORD FOR '__database_user__'@'localhost'=PASSWORD("__database_password__");
+            #GRANT ALL PRIVILEGES ON __database_name__.* TO '__database_user__'@'localhost' IDENTIFIED BY '__database_password__';
+            #CREATE USER '__database_user__'@'%';
+            #SET PASSWORD FOR '__database_user__'@'%'=PASSWORD("__database_password__");
+            #GRANT ALL PRIVILEGES ON __database_name__.* TO '__database_user__'@'%' IDENTIFIED BY '__database_password__';
+            #FLUSH PRIVILEGES;
+            #EOF
+ 
+            # notify heat that we are done here
+            #wc_notify --data-binary '{"status": "SUCCESS"}'
+    
+  server_web:
+    type: OS::Nova::Server
+    properties:
+      name: webserver
+      key_name: { get_resource: my_key }
+      image: { get_param: image-webserver }
+      flavor: { get_param: flavor-webserver }
+      networks:
+      - network: { get_param: public_net }
+    depends_on: server_database
+    
+  volume:
+    type: OS::Cinder::Volume
+    condition: create_prod_res
+    properties:
+      size: 1
+
+  volume_attachment:
+    type: OS::Cinder::VolumeAttachment
+    condition: create_prod_res
+    properties:
+      volume_id: { get_resource: volume }
+      instance_uuid: { get_resource: server_database }
+
+outputs:
+# openstack stack output show lab6 private_key -f value
+  server_database_private_ip:
+    description: IP address of server_database in private network
+    value: { get_attr: [ server_database, first_address ] }
+
+  server_database_public_ip:
+    description: Floating IP address of server_database in public network
+    value: { get_attr: [ server_database_floating_ip, floating_ip_address ] }
+
+  server_web_private_ip:
+    description: IP address of server_web in private network
+    value: { get_attr: [ server_web, first_address ] }
+
+  private_key:
+    # openstack stack output show lab6 private_key -f value
+    description: Private key
+    value: { get_attr: [ my_key, private_key ] }

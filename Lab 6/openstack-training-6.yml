@@ -10,6 +10,13 @@ heat_template_version: 2016-10-14
 # sudo ip netns exec $ROUTER ssh -v -i private_key debian@$IP
 # cd /var/lib/cloud/instance
 # cd /var/log ; tail -f cloud-init.log
+# wget http://www.magicermine.com/demos/curl/curl/curl-7.30.0.ermine.tar.bz2
+# tar xvjf curl-7.30.0.ermine.tar.bz2
+# sudo ip netns exec $ROUTER scp -i private_key -r curl-7.30.0.ermine debian@192.168.178.116:/home/debian
+# sudo cp curl.ermine /usr/bin/curl
+# openstack server backup create --name debian9-curl --wait database
+# openstack image list 
+# 
 description: Lab 1,2 - Params, Params Group, Resource Section
 parameters:
   database_user:
@@ -80,12 +87,12 @@ conditions:
   create_prod_res: {equals : [{get_param: env_type}, "prod"]}
 
 resources:
-  wait_condition:
-    type: OS::Heat::WaitCondition
-    properties:
-      handle: { get_resource: wait_handle }
-      count: 1
-      timeout: 600
+#  wait_condition:
+#    type: OS::Heat::WaitCondition
+#    properties:
+#      handle: { get_resource: wait_handle }
+#      count: 1
+#      timeout: 600
       
   wait_handle:
     type: OS::Heat::WaitConditionHandle
@@ -246,3 +253,4 @@ outputs:
   private_key:
     description: Private key
     value: { get_attr: [ my_key, private_key ] }
+

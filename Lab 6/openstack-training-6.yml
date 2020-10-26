@@ -1,13 +1,15 @@
 heat_template_version: 2016-10-14
-# openstack stack create --wait -f yaml -t openstack-lab5.yml --parameter "database_user=Testing1" --parameter "database_name=mydb" --parameter "image-webserver=cirros" --parameter "flavor-webserver=m1.tiny"  --parameter "image-database=centos7" --parameter "flavor-database=m1.xlarge" lab6
-# openstack stack update --wait -f yaml -t openstack-lab5.yml --parameter "database_user=Testing1" --parameter "database_name=mydb" --parameter "image-webserver=cirros" --parameter "flavor-webserver=m1.tiny"  --parameter "image-database=centos7" --parameter "flavor-database=m1.xlarge" lab6
+# openstack stack create --wait -f yaml -t openstack-lab5.yml --parameter "database_user=Testing1" --parameter "database_name=mydb" --parameter "image-webserver=cirros" --parameter "flavor-webserver=m1.tiny"  --parameter "image-database=debian9" --parameter "flavor-database=m1.xlarge" lab6
+# openstack stack update --wait -f yaml -t openstack-lab5.yml --parameter "database_user=Testing1" --parameter "database_name=mydb" --parameter "image-webserver=cirros" --parameter "flavor-webserver=m1.tiny"  --parameter "image-database=debian9" --parameter "flavor-database=m1.xlarge" lab6
 # https://cdimage.debian.org/cdimage/openstack/current-9/
 # wget https://cdimage.debian.org/cdimage/openstack/current-9/debian-9-openstack-amd64.qcow2
 # openstack image create "debian9" --file debian-9-openstack-amd64.qcow2 --disk-format qcow2 --container-format bare --public
 # ROUTER=$(ip netns ls | grep router | awk {'print $1'})
-# openstack server list --name database -f value -c Networks
-# sudo ip netns exec $ROUTER ssh -v -i private_key centos@192.168.178.132
+# IP=$(openstack server list --name database -f value -c Networks)
+# openstack stack output show lab6 private_key -f value > private_key
+# sudo ip netns exec $ROUTER ssh -v -i private_key debian@$IP
 # cd /var/lib/cloud/instance
+# cd /var/log ; tail -f cloud-init.log
 description: Lab 1,2 - Params, Params Group, Resource Section
 parameters:
   database_user:
@@ -251,6 +253,5 @@ outputs:
     value: { get_attr: [ server_web, first_address ] }
 
   private_key:
-    # openstack stack output show lab6 private_key -f value
     description: Private key
     value: { get_attr: [ my_key, private_key ] }

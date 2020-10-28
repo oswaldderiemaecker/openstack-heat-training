@@ -1,6 +1,6 @@
 heat_template_version: 2016-10-14
-# openstack stack create --wait -f yaml -t openstack-training-6.yml --parameter "database_user=Testing1" --parameter "database_name=mydb" --parameter "image-webserver=cirros" --parameter "flavor-webserver=m1.tiny"  --parameter "image-database=debian9" --parameter "flavor-database=m1.xlarge" lab6
-# openstack stack update --wait -f yaml -t openstack-training-6.yml --parameter "database_user=Testing1" --parameter "database_name=mydb" --parameter "image-webserver=cirros" --parameter "flavor-webserver=m1.tiny"  --parameter "image-database=debian9" --parameter "flavor-database=m1.xlarge" lab6
+# openstack stack create --wait -f yaml -t openstack-training-6.yml --parameter "database_user=Testing1" --parameter "database_name=mydb" --parameter "image-webserver=cirros" --parameter "flavor-webserver=m1.tiny"  --parameter "image-database=cirros" --parameter "flavor-database=m1.tiny" lab6
+# openstack stack update --wait -f yaml -t openstack-training-6.yml --parameter "database_user=Testing1" --parameter "database_name=mydb" --parameter "image-webserver=cirros" --parameter "flavor-webserver=m1.tiny"  --parameter "image-database=cirros" --parameter "flavor-database=m1.tiny" lab6
 # https://cdimage.debian.org/cdimage/openstack/current-9/
 # wget https://cdimage.debian.org/cdimage/openstack/current-9/debian-9-openstack-amd64.qcow2
 # openstack image create "debian9" --file debian-9-openstack-amd64.qcow2 --disk-format qcow2 --container-format bare --public
@@ -15,9 +15,9 @@ heat_template_version: 2016-10-14
 # sudo ip netns exec $ROUTER scp -i private_key -r curl-7.30.0.ermine debian@192.168.178.116:/home/debian
 # sudo cp curl.ermine /usr/bin/curl
 # openstack server backup create --name debian9-curl --wait database
-# openstack image list 
-# 
-description: Lab 1,2 - Params, Params Group, Resource Section
+# openstack image list
+#
+description: Lab 6
 parameters:
   database_user:
     description: Database User
@@ -57,7 +57,7 @@ parameters:
     type: string
     constraints:
       - allowed_values: [prod, test]
-  public_net:
+  external_web_net:
     type: string
     description: Network ID to use
     default: net-2061-ext-web
@@ -77,7 +77,7 @@ parameter_groups:
   description: Environment & Network
   parameters:
   - env_type
-  - public_net
+  - external_web_net
   - image-database
   - image-webserver
   - flavor-database
@@ -87,16 +87,23 @@ conditions:
   create_prod_res: {equals : [{get_param: env_type}, "prod"]}
 
 resources:
+
+  my_key:
+    type: OS::Nova::KeyPair
+    properties:
+      save_private_key: true
+      name: my_key
+
 #  wait_condition:
 #    type: OS::Heat::WaitCondition
 #    properties:
 #      handle: { get_resource: wait_handle }
 #      count: 1
 #      timeout: 600
-      
+
   wait_handle:
     type: OS::Heat::WaitConditionHandle
-    
+
   mysql_root_password:
     type: OS::Heat::RandomString
     properties:
@@ -108,11 +115,37 @@ resources:
     properties:
       length: 32
       sequence: lettersdigits
-  
+
+  public_network:
+    type: OS::Neutron::Net
+    properties:
+      name: web-network
+
+  public_subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      network_id: { get_resource: public_network }
+      cidr: "10.7.1.0/24"
+      dns_nameservers: [ "8.8.8.8", "8.8.4.4" ]
+      ip_version: 4
+
+  public_router:
+    type: OS::Neutron::Router
+    properties:
+      external_gateway_info:
+        network: { get_param: external_web_net }
+
+  public_router_interface:
+    type: OS::Neutron::RouterInterface
+    properties:
+      router_id: { get_resource: public_router }
+      subnet_id: { get_resource: public_subnet }
+
   private_net:
     type: OS::Neutron::Net
+    properties:
+      name: database-network
 
-  #3
   private_subnet:
     type: OS::Neutron::Subnet
     properties:
@@ -121,40 +154,17 @@ resources:
       dns_nameservers: [ "8.8.8.8", "8.8.4.4" ]
       ip_version: 4
 
-  #3
   router:
     type: OS::Neutron::Router
     properties:
       external_gateway_info:
-        network: { get_param: public_net }
+        network: { get_param: external_web_net }
 
-  #3
   router_interface:
     type: OS::Neutron::RouterInterface
     properties:
       router_id: { get_resource: router }
       subnet_id: { get_resource: private_subnet }
-
-  #3
-  web_secgroup:
-    type: OS::Neutron::SecurityGroup
-    properties:
-      rules:
-        #4
-        repeat:
-          template:
-            protocol: tcp
-            port_range_min: <%port%>
-            port_range_max: <%port%>
-          for_each:
-            <%port%>: { get_param: ports }
-
-  #3
-  my_key:
-    type: OS::Nova::KeyPair
-    properties:
-      save_private_key: true
-      name: my_key
 
   server_database_port:
     type: OS::Neutron::Port
@@ -163,15 +173,18 @@ resources:
       security_groups:
         - default
         - { get_resource: web_secgroup }
+        - { get_resource: database_secgroup }
       fixed_ips:
         - subnet_id: { get_resource: private_subnet }
 
-  server_database_floating_ip:
-    type: OS::Neutron::FloatingIP
+  database_secgroup:
+    type: OS::Neutron::SecurityGroup
     properties:
-      floating_network: { get_param: public_net }
-      port_id: { get_resource: server_database_port }
-          
+      rules:
+        - protocol: tcp
+          port_range_min: 3306
+          port_range_max: 3306
+
   server_database:
     type: OS::Nova::Server
     properties:
@@ -186,32 +199,42 @@ resources:
         str_replace:
           params:
             __mysql_root_password__: { get_attr: [mysql_root_password, value] }
-            __database_name__: { get_param: database_name }
-            __database_user__: { get_param: database_user }
-            __database_password__: { get_attr: [database_password, value] }
             wc_notify: { get_attr: ['wait_handle', 'curl_cli'] }
           template: |
-            #!/bin/bash
-
-            echo "Configuring Database"
-            touch database_config.ini
-            
-            # install MySQL
-            #sudo apt-get update
-            #sudo apt-get install -y mysql-server
- 
-            # configure MySQL root password
-            #mysqladmin -u root password "__mysql_root_password__"
- 
-            # listen on all network interfaces
-            #sed -i "s/bind-address.*/bind-address = 0.0.0.0/" /etc/mysql/my.cnf
- 
-            # restart service
-            #service mysql restart
- 
-            # notify heat that we are done here
+            #!/bin/sh
+            echo "Installing and Configuring Database"
+            echo "wc_notify"
             wc_notify --data-binary '{"status": "SUCCESS"}'
-    
+
+  server_web_port:
+    type: OS::Neutron::Port
+    properties:
+      network: { get_resource: public_network }
+      security_groups:
+        - default
+        - { get_resource: web_secgroup }
+        - { get_resource: database_secgroup }
+      fixed_ips:
+        - subnet_id: { get_resource: public_subnet }
+
+  server_web_floating_ip:
+    type: OS::Neutron::FloatingIP
+    properties:
+      floating_network: { get_param: external_web_net }
+      port_id: { get_resource: server_web_port }
+
+  web_secgroup:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      rules:
+        repeat:
+          template:
+            protocol: tcp
+            port_range_min: <%port%>
+            port_range_max: <%port%>
+          for_each:
+            <%port%>: { get_param: ports }
+
   server_web:
     type: OS::Nova::Server
     properties:
@@ -220,9 +243,30 @@ resources:
       image: { get_param: image-webserver }
       flavor: { get_param: flavor-webserver }
       networks:
-      - network: { get_param: public_net }
+      - port: { get_resource: server_web_port }
+      user_data_format: RAW
+      user_data_update_policy: REPLACE
+      user_data:
+        str_replace:
+          params:
+            __database_hostname__: { get_attr: [ server_database, first_address ] }
+            __database_name__: { get_param: database_name }
+            __database_user__: { get_param: database_user }
+            __database_password__: { get_attr: [database_password, value] }
+            wc_notify: { get_attr: ['wait_handle', 'curl_cli'] }
+          template: |
+            #!/bin/sh
+            echo "Installing and Configuring Database on __database_hostname__"
+            echo "db_host: __database_hostname__" > database_config.ini
+            echo "db_name: __database_name__" >> database_config.ini
+            echo "db_user: __database_user__" >> database_config.ini
+            echo "db_pass: __database_password__" >> database_config.ini
+
+            cat database_config.ini
+            echo "wc_notify"
+            wc_notify --data-binary '{"status": "SUCCESS"}'
     depends_on: server_database
-    
+
   volume:
     type: OS::Cinder::Volume
     condition: create_prod_res
@@ -239,18 +283,17 @@ resources:
 outputs:
 # openstack stack output show lab6 private_key -f value
   server_database_private_ip:
-    description: IP address of server_database in private network
+    description: IP address of the database server in private network
     value: { get_attr: [ server_database, first_address ] }
 
-  server_database_public_ip:
-    description: Floating IP address of server_database in public network
-    value: { get_attr: [ server_database_floating_ip, floating_ip_address ] }
+  server_web_public_ip:
+    description: Floating IP address of the web server in public network
+    value: { get_attr: [ server_web_floating_ip, floating_ip_address ] }
 
   server_web_private_ip:
-    description: IP address of server_web in private network
+    description: IP address of the web server in private network
     value: { get_attr: [ server_web, first_address ] }
 
   private_key:
     description: Private key
     value: { get_attr: [ my_key, private_key ] }
-

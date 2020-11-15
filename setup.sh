@@ -13,3 +13,8 @@ cd $HOME_USER/openstack-training-on-aws
 chown -R centos:centos $HOME_USER/openstack-training-on-aws
 
 source /root/keystonerc_admin && ./ip-change.sh 34.224.228.250 $1 172.31.36.180 $2
+
+yum update -y
+yum install -y epel-release
+yum install -y nodejs
+node --version

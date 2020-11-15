@@ -3,6 +3,11 @@
 # Params: Public IP and Private IP
 # ./setup.sh 100.25.129.241 172.31.65.77
 
+yum update -y
+yum install -y epel-release
+yum install -y nodejs
+node --version
+
 HOME_USER=/home/centos
 
 cd $HOME_USER
@@ -14,7 +19,3 @@ chown -R centos:centos $HOME_USER/openstack-training-on-aws
 
 source /root/keystonerc_admin && ./ip-change.sh 34.224.228.250 $1 172.31.36.180 $2
 
-yum update -y
-yum install -y epel-release
-yum install -y nodejs
-node --version

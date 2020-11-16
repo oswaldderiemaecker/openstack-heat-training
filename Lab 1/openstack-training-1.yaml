@@ -1,3 +1,9 @@
+# 1. create the stack 
+# 2. update the stack with env_type=prod
+# 3. create a second stack (env_type=test)
+# 4. lister stack (lab1 et lab1.test )
+# 5. show event list stack de prod
+
 heat_template_version: 2014-10-16
 description: Lab 1 - Params, Params Group
 parameters:
